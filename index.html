@@ -297,6 +297,7 @@ tr:hover td{background:var(--s2)}
   <div><div class="hti" id="ptit">Dashboard Executivo</div><div class="hsu" id="psub">Clínica Radiológica Santa Bárbara · Junho 2026</div></div>
   <div class="hsp"></div>
   <button class="hb" onclick="recarregar()"><i class="ti ti-refresh"></i>Atualizar</button>
+  <button class="hb" id="btn-zerar" onclick="openModal('zerar-sistema')" style="display:none;color:var(--red);border-color:#fca5a5"><i class="ti ti-trash"></i>Zerar</button>
   <button class="hb" onclick="fazerLogout()" style="color:var(--red);border-color:var(--red)" title="Sair do sistema"><i class="ti ti-logout"></i>Sair</button>
   <button class="hb nd" onclick="openModal('alertas')"><i class="ti ti-bell"></i><div class="ndot" id="ndot"></div></button>
   <button class="hb pr" onclick="openModal('nova-receita')"><i class="ti ti-plus"></i>Novo Lançamento</button>
@@ -958,6 +959,38 @@ function openModal(type,id){
     return;
 
 
+  }else if(type==='zerar-sistema'){
+    if(PERFIL_ATUAL?.perfil !== 'administrador'){
+      toast('Apenas administradores podem zerar o sistema.','e'); return;
+    }
+    title='⚠ Zerar Todos os Lançamentos';
+    body=`
+    <div class="ab ar" style="margin-bottom:16px">
+      <i class="ti ti-alert-triangle" style="font-size:22px"></i>
+      <div><strong>Esta ação não pode ser desfeita.</strong><br>
+      Todos os lançamentos de receitas, despesas e glosas serão excluídos permanentemente. Os saldos bancários serão zerados.</div>
+    </div>
+    <div style="background:var(--s2);border:1px solid var(--bdr,var(--border));border-radius:8px;padding:14px;margin-bottom:16px">
+      <div style="font-size:12px;font-weight:700;color:var(--t2);margin-bottom:8px">Será apagado:</div>
+      <div style="display:flex;flex-direction:column;gap:5px;font-size:12.5px">
+        <div><i class="ti ti-circle-x" style="color:#dc2626"></i> Todos os lançamentos de Receitas</div>
+        <div><i class="ti ti-circle-x" style="color:#dc2626"></i> Todos os lançamentos de Despesas</div>
+        <div><i class="ti ti-circle-x" style="color:#dc2626"></i> Todos os registros de Glosas</div>
+        <div><i class="ti ti-circle-x" style="color:#dc2626"></i> Saldos bancários zerados para R$ 0,00</div>
+      </div>
+      <div style="font-size:12px;font-weight:700;color:var(--t2);margin-top:10px;margin-bottom:8px">Será mantido:</div>
+      <div style="display:flex;flex-direction:column;gap:5px;font-size:12.5px">
+        <div><i class="ti ti-circle-check" style="color:#059669"></i> Operadoras, Fornecedores, Bancos, Centros de Custo</div>
+        <div><i class="ti ti-circle-check" style="color:#059669"></i> Usuários, Permissões e Configurações</div>
+      </div>
+    </div>
+    <div class="fg"><label class="fl">Digite <strong>CONFIRMAR</strong> para prosseguir</label>
+    <input class="fc" id="z-conf" placeholder="CONFIRMAR" oninput="document.getElementById('z-btn').disabled=this.value!=='CONFIRMAR'"></div>
+    <div class="br-row">
+      <button class="btn" onclick="closeModal()">Cancelar — manter dados</button>
+      <button class="btn btd" id="z-btn" disabled onclick="zerarSistema()"><i class="ti ti-trash"></i> Zerar Todos os Lançamentos</button>
+    </div>`;
+
   }else if(type==='conc-lancar'){
     title='Lançar item do extrato';
     body=`<div class="ab ai" style="margin-bottom:12px"><i class="ti ti-info-circle"></i>Débito: DEB MANUT CONTA — -R$ 48,00 em 25/06/2026</div>
@@ -975,6 +1008,29 @@ function closeModal(){
 function ovck(e){if(e.target===$('ov'))closeModal()}
 
 /* ── CRUD SUPABASE ─────────────── */
+/* ── ZERAR SISTEMA ──────────────────────── */
+async function zerarSistema(){
+  if(PERFIL_ATUAL?.perfil !== 'administrador'){
+    toast('Apenas administradores podem zerar o sistema.','e'); return;
+  }
+  showL('Zerando lançamentos...');
+  closeModal();
+  try{
+    for(const t of ['glosas','receitas','despesas']){
+      const {error}=await SB.from(t).delete().neq('id','00000000-0000-0000-0000-000000000000');
+      if(error) throw new Error('Erro em '+t+': '+error.message);
+    }
+    const {error:eb}=await SB.from('bancos').update({saldo:0}).neq('id','00000000-0000-0000-0000-000000000000');
+    if(eb) throw new Error('Erro bancos: '+eb.message);
+    toast('Sistema zerado com sucesso!','s');
+    await recarregar();
+  }catch(e){
+    toast('Erro: '+e.message,'e');
+  }finally{
+    hideL();
+  }
+}
+
 async function salvarRec(){
   if(!v('m-dc')){toast('Preencha a descrição.','e');return;}
   const row={data:v('m-dt'),competencia:v('m-co'),descricao:v('m-dc'),categoria:v('m-ca'),subcategoria:v('m-sb'),forma_recebimento:v('m-fr'),valor_previsto:parseFloat(v('m-pv'))||0,valor_realizado:parseFloat(v('m-rv'))||0,observacoes:v('m-ob'),status:v('m-st')};
@@ -1186,6 +1242,9 @@ function entrarNoSistema(){
   badge.innerHTML = `<i class="ti ${isAdmin?'ti-shield-check':'ti-user'}"></i>${isAdmin?'Administrador':'Usuário'}`;
   console.log('Perfil carregado:', PERFIL_ATUAL?.perfil, '| isAdmin:', isAdmin);
   // Ambos os perfis têm acesso completo
+  // Botão Zerar: só para administradores
+  const btnZ = document.getElementById('btn-zerar');
+  if(btnZ) btnZ.style.display = isAdmin ? 'flex' : 'none';
   // Carregar dados
   recarregar();
 }
